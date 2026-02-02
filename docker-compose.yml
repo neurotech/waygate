@@ -1,0 +1,7 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./data:/app/data
