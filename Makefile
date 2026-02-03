@@ -11,4 +11,5 @@ restart:
 
 clean:
 	@docker compose stop && \
-	docker compose rm -f
+	docker compose rm -f && \
+	rm data/items.db
