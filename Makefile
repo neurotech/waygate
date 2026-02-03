@@ -3,7 +3,6 @@
 all: start
 
 start:
-	@make clean && \
 	docker compose up --yes -d --quiet-pull --build
 
 restart:
