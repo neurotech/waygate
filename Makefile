@@ -12,4 +12,4 @@ restart:
 clean:
 	@docker compose stop && \
 	docker compose rm -f && \
-	rm data/items.db
+	sudo rm data/items.db
