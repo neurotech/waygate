@@ -96,30 +96,18 @@ app.post("/items", async (c) => {
 
 app.get("/items", (c) => {
   const stmt = db.prepare(
-    "SELECT id, item, title, favicon_data IS NOT NULL AS has_favicon, createdAt FROM items ORDER BY createdAt DESC"
+    "SELECT id, item, title, favicon_data, favicon_type, createdAt FROM items ORDER BY createdAt DESC"
   );
   const items = (stmt.all() as any[]).map((row) => ({
     id: row.id,
     item: row.item,
     title: row.title,
-    favicon: row.has_favicon ? `/favicons/${row.id}` : null,
+    favicon: row.favicon_data
+      ? `data:${row.favicon_type || "image/x-icon"};base64,${Buffer.from(row.favicon_data).toString("base64")}`
+      : null,
     createdAt: row.createdAt,
   }));
   return c.json(items);
-});
-
-app.get("/favicons/:id", (c) => {
-  const id = c.req.param("id");
-  const row = db.prepare("SELECT favicon_data, favicon_type FROM items WHERE id = ?").get(id) as any;
-  if (!row?.favicon_data) {
-    return c.notFound();
-  }
-  return new Response(row.favicon_data, {
-    headers: {
-      "Content-Type": row.favicon_type || "image/x-icon",
-      "Cache-Control": "public, max-age=86400",
-    },
-  });
 });
 
 app.delete("/items/:id", (c) => {
