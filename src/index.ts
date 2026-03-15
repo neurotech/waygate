@@ -10,14 +10,37 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     item TEXT NOT NULL,
     title TEXT NOT NULL,
-    favicon TEXT,
+    favicon_data BLOB,
+    favicon_type TEXT,
     createdAt TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
 
+// Migration for existing databases with old schema
+try { db.exec("ALTER TABLE items ADD COLUMN favicon_data BLOB"); } catch {}
+try { db.exec("ALTER TABLE items ADD COLUMN favicon_type TEXT"); } catch {}
+
 interface Metadata {
   title: string;
-  favicon: string | null;
+  faviconData: Buffer | null;
+  faviconType: string | null;
+}
+
+async function fetchFavicon(
+  url: string
+): Promise<{ data: Buffer | null; type: string | null }> {
+  try {
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Waygate/1.0)" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return { data: null, type: null };
+    const type = response.headers.get("content-type") || "image/x-icon";
+    const arrayBuffer = await response.arrayBuffer();
+    return { data: Buffer.from(arrayBuffer), type };
+  } catch {
+    return { data: null, type: null };
+  }
 }
 
 async function fetchMetadata(url: string): Promise<Metadata> {
@@ -26,28 +49,29 @@ async function fetchMetadata(url: string): Promise<Metadata> {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Waygate/1.0)" },
       signal: AbortSignal.timeout(5000),
     });
-    if (!response.ok) return { title: url, favicon: null };
+    if (!response.ok) return { title: url, faviconData: null, faviconType: null };
     const html = await response.text();
     const $ = cheerio.load(html);
 
     const title = $("title").text().trim() || url;
 
-    let favicon =
+    let faviconUrl =
       $('link[rel="icon"]').attr("href") ||
       $('link[rel="shortcut icon"]').attr("href") ||
       null;
 
-    if (favicon && !favicon.startsWith("http")) {
-      favicon = new URL(favicon, url).href;
+    if (faviconUrl && !faviconUrl.startsWith("http")) {
+      faviconUrl = new URL(faviconUrl, url).href;
     }
 
-    if (!favicon) {
-      favicon = new URL("/favicon.ico", url).href;
+    if (!faviconUrl) {
+      faviconUrl = new URL("/favicon.ico", url).href;
     }
 
-    return { title, favicon };
+    const { data, type } = await fetchFavicon(faviconUrl);
+    return { title, faviconData: data, faviconType: type };
   } catch {
-    return { title: url, favicon: null };
+    return { title: url, faviconData: null, faviconType: null };
   }
 }
 
@@ -58,22 +82,44 @@ app.post("/items", async (c) => {
   if (!body.item) {
     return c.json({ error: "item is required" }, 400);
   }
-  const stmt = db.prepare("INSERT INTO items (item, title, favicon) VALUES (?, ?, ?)");
-  const result = stmt.run(body.item, body.item, null);
+  const stmt = db.prepare("INSERT INTO items (item, title) VALUES (?, ?)");
+  const result = stmt.run(body.item, body.item);
   const id = result.lastInsertRowid;
 
-  // Fetch metadata in background, update when complete
-  fetchMetadata(body.item).then(({ title, favicon }) => {
-    db.prepare("UPDATE items SET title = ?, favicon = ? WHERE id = ?").run(title, favicon, id);
+  fetchMetadata(body.item).then(({ title, faviconData, faviconType }) => {
+    db.prepare("UPDATE items SET title = ?, favicon_data = ?, favicon_type = ? WHERE id = ?")
+      .run(title, faviconData, faviconType, id);
   });
 
   return c.json({ id, item: body.item, title: body.item, favicon: null }, 201);
 });
 
 app.get("/items", (c) => {
-  const stmt = db.prepare("SELECT id, item, title, favicon, createdAt FROM items ORDER BY createdAt DESC");
-  const items = stmt.all();
+  const stmt = db.prepare(
+    "SELECT id, item, title, favicon_data IS NOT NULL AS has_favicon, createdAt FROM items ORDER BY createdAt DESC"
+  );
+  const items = (stmt.all() as any[]).map((row) => ({
+    id: row.id,
+    item: row.item,
+    title: row.title,
+    favicon: row.has_favicon ? `/favicons/${row.id}` : null,
+    createdAt: row.createdAt,
+  }));
   return c.json(items);
+});
+
+app.get("/favicons/:id", (c) => {
+  const id = c.req.param("id");
+  const row = db.prepare("SELECT favicon_data, favicon_type FROM items WHERE id = ?").get(id) as any;
+  if (!row?.favicon_data) {
+    return c.notFound();
+  }
+  return new Response(row.favicon_data, {
+    headers: {
+      "Content-Type": row.favicon_type || "image/x-icon",
+      "Cache-Control": "public, max-age=86400",
+    },
+  });
 });
 
 app.delete("/items/:id", (c) => {
