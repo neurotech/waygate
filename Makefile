@@ -5,6 +5,9 @@ all: start
 start:
 	docker compose up --yes -d --quiet-pull --build
 
+stop:
+	docker compose stop
+
 restart:
 	docker compose restart
 
