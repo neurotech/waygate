@@ -82,7 +82,7 @@ const origins = (
     "http://slab:8000"
 ).split(",");
 
-app.use("/items/*", cors({ origin: origins }));
+app.use("*", cors({ origin: origins }));
 
 app.post("/items", async (c) => {
   const body = await c.req.json<{ item: string }>();
