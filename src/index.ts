@@ -79,7 +79,7 @@ async function fetchMetadata(url: string): Promise<Metadata> {
 const app = new Hono();
 
 const origins = (
-    "http://slab:8008"
+    "http://slab:8000"
 ).split(",");
 
 app.use("/items/*", cors({ origin: origins }));
