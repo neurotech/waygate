@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import Database from "better-sqlite3";
 import * as cheerio from "cheerio";
@@ -76,6 +77,12 @@ async function fetchMetadata(url: string): Promise<Metadata> {
 }
 
 const app = new Hono();
+
+const origins = (
+    "http://slab:8008"
+).split(",");
+
+app.use("/items/*", cors({ origin: origins }));
 
 app.post("/items", async (c) => {
   const body = await c.req.json<{ item: string }>();
